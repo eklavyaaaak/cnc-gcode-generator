@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>AI-Assisted CNC G-Code Generator</title>
+<style>
+:root{--bg:#0b1522;--pn:#0f1d2e;--tx:#e6eef8;--mu:#8aa0ba;--ac:#5eead4;--am:#fbbf24;--rd:#f87171;--ln:#1c2f45;--cd:#08111c;color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:light){:root:not([data-theme="dark"]){--bg:#f1f5fa;--pn:#fff;--tx:#0f1b2d;--mu:#55657d;--ac:#0b8f80;--am:#a8660a;--rd:#c62828;--ln:#d3dce8;--cd:#eaf0f7;color-scheme:light}}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background-image:linear-gradient(var(--ln) 1px,transparent 1px),linear-gradient(90deg,var(--ln) 1px,transparent 1px);background-size:28px 28px;background-attachment:fixed}
+.mono,code,pre,input,select,textarea,button{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+main{max-width:880px;margin:0 auto;padding:18px 14px 40px}
+h1{font:800 28px/1.1 system-ui,sans-serif;margin:4px 0 6px;letter-spacing:-.5px}
+.sub{color:var(--mu);margin:0 0 16px;font-size:14px}
+.tag{color:var(--ac);font-size:12px;letter-spacing:2px}
+section{background:var(--pn);border:1px solid var(--ln);border-radius:6px;padding:14px;margin:12px 0}
+h2{margin:0 0 10px;font-size:12px;letter-spacing:2px;color:var(--ac);font-weight:600}
+h2:before{content:"";display:inline-block;width:9px;height:9px;background:var(--ac);margin-right:8px}
+textarea{width:100%;min-height:84px;background:var(--cd);color:var(--tx);border:1px solid var(--ln);border-radius:4px;padding:10px;font-size:14px;resize:vertical}
+button,select,input{background:var(--cd);color:var(--tx);border:1px solid var(--ln);border-radius:4px;padding:9px 10px;font-size:13px}
+button{cursor:pointer}button.pri{background:var(--ac);color:#04251f;border-color:var(--ac);font-weight:700}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;align-items:center}
+.chip{font-size:12px;padding:6px 9px;color:var(--mu)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+label{display:block;font-size:12px;color:var(--mu)}label input,label select{width:100%;margin-top:4px}
+.pl{display:flex;flex-wrap:wrap;gap:6px}.pl span{background:var(--cd);border:1px solid var(--ln);border-left:3px solid var(--ac);padding:5px 9px;font-size:12px;border-radius:3px}
+canvas{width:100%;display:block;background:var(--cd);border:1px solid var(--ln);border-radius:4px}
+input[type=range]{flex:1;min-width:120px;padding:0;accent-color:var(--ac)}
+.st{display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:8px}
+.st div{background:var(--cd);border:1px solid var(--ln);padding:9px;border-radius:4px}.st b{display:block;font-size:20px;color:var(--ac)}.st small{color:var(--mu);font-size:11px}
+.ck{margin:4px 0;padding:7px 10px;border-left:3px solid var(--am);background:var(--cd);font-size:13px}.ck.err{border-color:var(--rd)}.ck.ok{border-color:var(--ac)}
+pre{margin:0;background:var(--cd);border:1px solid var(--ln);border-radius:4px;padding:10px;max-height:340px;overflow:auto;font-size:12px;line-height:1.55;color:var(--tx)}
+.ro{font-size:12px;color:var(--mu)}.gl{white-space:pre;cursor:pointer;padding:0 4px;border-radius:2px}.gl:hover{background:var(--pn)}.gl.on{background:var(--ln);color:var(--ac);font-weight:700}pre{position:relative}summary{cursor:pointer}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style></head><body><main>
+<div class="tag mono">PROMPT &rarr; TOOLPATH &rarr; G-CODE</div>
+<h1>AI-Assisted CNC G-Code Generator</h1>
+<p class="sub">Describe the part in plain English. Get a validated toolpath, speeds and feeds, a cycle-time estimate and controller-ready G-code.</p>
+
+<section><h2>DESCRIBE THE PART</h2>
+<textarea id="prompt" aria-label="Part description" spellcheck="false"></textarea>
+<div class="row"><button class="pri" id="go">Generate G-code</button><span class="ro">Try:</span><span id="ex"></span></div>
+<p class="ro" style="margin:8px 0 0">Understands: face, pocket (rect or circular), drill (count, Ø, through, bolt circle, at x,y), profile, stock WxHxT, material, depth. The parser is rule-based and runs fully offline in your browser.</p></section>
+
+<section><h2>SETUP</h2><div class="grid">
+<label>Material<select id="mat"></select></label>
+<label>Controller<select id="gc"><option value="fanuc">Fanuc / Haas</option><option value="grbl">GRBL (hobby)</option></select></label>
+<label>End mill Ø (mm)<input id="td" type="number" value="6" min="1" max="25" step="0.5"></label>
+<label>Flutes<input id="fl" type="number" value="2" min="1" max="6"></label>
+<label>Max RPM<input id="mr" type="number" value="12000" step="500"></label>
+<label>Stepover %<input id="so" type="number" value="60" min="10" max="90"></label>
+<label>Spindle power (W)<input id="pw" type="number" value="1500" step="100"></label>
+<label>Stock X<input id="sw" type="number" value="100"></label>
+<label>Stock Y<input id="sh" type="number" value="60"></label>
+<label>Stock Z<input id="st" type="number" value="10"></label>
+<label>Part shape<select id="shp"></select></label><label><span id="la">A</span><input id="sa" type="number" value="60"></label><label><span id="lb">B</span><input id="sb" type="number" value="40"></label><label><span id="lc">C</span><input id="sc" type="number" value="10"></label><label>Shape operation<select id="sop"><option value="pocket">Pocket (inside)</option><option value="profile">Cut out (profile)</option></select></label><label>Pocket depth (mm)<input id="sd" type="number" value="5" step="0.5"></label><label id="lp" style="grid-column:1/-1">Polygon points, absolute mm (x,y pairs)<input id="spt" value="20,10 80,10 80,30 50,30 50,50 20,50"></label></div>
+<h2 style="margin-top:14px">PLAN</h2><div class="pl" id="plan"></div></section>
+
+<section><h2>SIMULATION</h2><div class="row" style="margin:0 0 8px"><button id="v3" class="pri">3D material removal</button><button id="v2">2D toolpath</button></div><div id="c3" style="touch-action:none"></div><canvas id="cv" aria-label="Toolpath preview" style="display:none"></canvas>
+<div class="row"><button id="pl">Play</button><input id="sl" type="range" min="0" max="1000" value="1000" aria-label="Simulation progress">
+<select id="sp" aria-label="Speed"><option value="1">1x</option><option value="3">3x</option><option value="8">8x</option></select></div>
+<p class="ro mono" id="rd" style="margin:8px 0 0"></p>
+<p class="ro" style="margin:4px 0 0">Teal = cutting (width = tool Ø), amber dashed = rapid, red dot = plunge.</p></section>
+
+<section><h2>PROCESS DATA</h2><div class="st" id="stats"></div><div id="ck" style="margin-top:10px"></div></section>
+
+<section><h2>G-CODE</h2><pre id="out"></pre>
+<div class="row"><button id="cp">Copy</button><button id="dl">Download .nc</button></div>
+<p class="ro" style="margin:8px 0 0">Tap any line to jump the simulation to that move.</p>
+<details style="margin-top:10px"><summary class="ro">Verify your own G-code (paste, simulate, catch crashes)</summary><textarea id="pg" spellcheck="false" placeholder="Paste G-code here. Supports G0 G1 G2 G3 (I/J), G81 G83 G80, G90/G91, G20/G21." style="margin-top:8px;min-height:130px"></textarea><div class="row"><button id="vr" class="pri">Verify and simulate</button><button id="bs">Load sample with a mistake</button></div><p class="ro" style="margin:8px 0 0">Uses the stock size and end mill Ø from Setup. Tool Ø is also read from comments like (--- T1 END MILL D6 ---).</p></details></section>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const $=i=>document.getElementById(i),F=n=>String(+n.toFixed(3)),num=r=>r?+r[1]:undefined;
+const MAT={al:{n:'Aluminum 6061-T6',vc:250,k:.0075,ap:1,kc:700},st:{n:'Mild steel 1018',vc:90,k:.004,ap:.4,kc:2000},br:{n:'Brass C360',vc:180,k:.006,ap:.8,kc:800},pl:{n:'Acrylic / plastic',vc:300,k:.01,ap:1,kc:300},ti:{n:'Titanium Ti-6Al-4V',vc:45,k:.003,ap:.3,kc:1400}};
+const EX_OLD=['face 0.5mm, pocket 40x30 at 50,30 5mm deep, drill 4 holes 6mm through, profile outline','stock 120x80x12 aluminum, circular pocket 30mm dia 6mm deep, drill 6 holes 5mm through on pcd 50, profile','stock 100x60x10 brass, face, pocket 60x25 4mm deep, drill 2 holes 8mm 10mm deep'];
+for(const k in MAT)$('mat').add(new Option(MAT[k].n,k));
+const EX=[{n:'Stock + holes',p:EX_OLD[0],sh:'stock'},{n:'Hex cut-out',p:'stock 120x80x12 aluminum, face 0.5mm, drill 6 holes 5mm through on pcd 30 at 60,40',sh:'hex',a:60,op:'profile'},{n:'L pocket',p:'stock 120x80x10 aluminum, face 0.5mm, drill 2 holes 6mm through',sh:'lsh',a:80,b:60,c:25,op:'pocket',d:5},{n:'Slot cut-out',p:'stock 120x60x8 brass, face 0.3mm, drill 2 holes 5mm through',sh:'slot',a:90,b:30,op:'profile'},{n:'Triangle pocket',p:'stock 100x80x10 aluminum, face 0.5mm',sh:'tri',a:60,b:50,op:'pocket',d:4}];
+function loadEx(e){$('prompt').value=e.p;$('shp').value=e.sh||'stock';[e.a,e.b,e.c].forEach((v,i)=>{if(v!==undefined)$('s'+'abc'[i]).value=v});if(e.op)$('sop').value=e.op;if(e.d)$('sd').value=e.d;shLab();run(true)}
+EX.forEach(e=>{const b=document.createElement('button');b.className='chip';b.textContent=e.n;b.onclick=()=>loadEx(e);$('ex').appendChild(b)});
+const SH={stock:['Stock outline (rectangle)'],circle:['Circle','Diameter'],rect:['Rectangle','Width','Height'],rrect:['Rounded rectangle','Width','Height','Corner radius'],slot:['Slot (obround)','Length','Width'],lsh:['L-shape','Width','Height','Arm thickness'],hex:['Hexagon','Across corners'],tri:['Triangle','Base','Height'],poly:['Custom polygon']};
+for(const k in SH)$('shp').add(new Option(SH[k][0],k));
+function shLab(){const v=$('shp').value,s=SH[v];['a','b','c'].forEach((k,i)=>{const e=$('l'+k);e.textContent=s[i+1]||'';e.parentElement.style.display=s[i+1]?'':'none'});$('lp').style.display=v=='poly'?'':'none';$('sop').parentElement.style.display=$('sd').parentElement.style.display=v=='stock'?'none':''}
+$('shp').addEventListener('input',shLab);
+const area=p=>p.reduce((a,q,i)=>{const n=p[(i+1)%p.length];return a+q[0]*n[1]-n[0]*q[1]},0)/2;
+const clean=p=>p.filter((q,i)=>{const m=p[(i+1)%p.length];return Math.hypot(q[0]-m[0],q[1]-m[1])>1e-6});
+const arc=(cx,cy,R,a0,a1)=>{const n=Math.max(4,Math.ceil(Math.abs(a1-a0)/(2*Math.acos(Math.max(0,1-.02/R)))));return Array.from({length:n+1},(_,i)=>{const a=a0+(a1-a0)*i/n;return[cx+R*Math.cos(a),cy+R*Math.sin(a)]})};
+function polyOf(c,ct){const A=c.sa,B=c.sb,C=c.sc,x=ct[0],y=ct[1],P=Math.PI;let p=[];
+ if(c.sh=='circle')p=arc(x,y,A/2,0,2*P).slice(0,-1);
+ else if(c.sh=='rect')p=[[-1,-1],[1,-1],[1,1],[-1,1]].map(q=>[x+q[0]*A/2,y+q[1]*B/2]);
+ else if(c.sh=='rrect'){const R=Math.min(C,A/2,B/2);p=R<.01?[[-1,-1],[1,-1],[1,1],[-1,1]].map(q=>[x+q[0]*A/2,y+q[1]*B/2]):[...arc(x+A/2-R,y-B/2+R,R,-P/2,0),...arc(x+A/2-R,y+B/2-R,R,0,P/2),...arc(x-A/2+R,y+B/2-R,R,P/2,P),...arc(x-A/2+R,y-B/2+R,R,P,1.5*P)]}
+ else if(c.sh=='slot'){const R=B/2,s=Math.max(A-B,0)/2;p=[...arc(x+s,y,R,-P/2,P/2),...arc(x-s,y,R,P/2,1.5*P)]}
+ else if(c.sh=='lsh')p=[[0,0],[A,0],[A,C],[C,C],[C,B],[0,B]].map(q=>[x+q[0]-A/2,y+q[1]-B/2]);
+ else if(c.sh=='hex')p=Array.from({length:6},(_,i)=>[x+A/2*Math.cos(i*P/3),y+A/2*Math.sin(i*P/3)]);
+ else if(c.sh=='tri')p=[[-A/2,-B/2],[A/2,-B/2],[0,B/2]].map(q=>[x+q[0],y+q[1]]);
+ else if(c.sh=='poly'){const n=(c.spt.match(/-?\d+\.?\d*/g)||[]).map(Number);for(let i=0;i+1<n.length;i+=2)p.push([n[i],n[i+1]])}
+ p=clean(p);return p.length<3?[]:(area(p)<0?p.reverse():p)}
+function off(p,d){const n=p.length,E=p.map((q,i)=>{const m=p[(i+1)%n],dx=m[0]-q[0],dy=m[1]-q[1],l=Math.hypot(dx,dy)||1;return{ux:dx/l,uy:dy/l}});
+ return p.map((q,i)=>{const a=E[(i+n-1)%n],b=E[i],cr=a.ux*b.uy-a.uy*b.ux,n1=[-a.uy*d,a.ux*d],n2=[-b.uy*d,b.ux*d];if(Math.abs(cr)<1e-9)return[q[0]+n2[0],q[1]+n2[1]];const t=((n2[0]-n1[0])*b.uy-(n2[1]-n1[1])*b.ux)/cr;return[q[0]+n1[0]+a.ux*t,q[1]+n1[1]+a.uy*t]})}
+const ok=(a,b)=>area(b)>1&&a.every((q,i)=>{const j=(i+1)%a.length;return(a[j][0]-q[0])*(b[j][0]-b[i][0])+(a[j][1]-q[1])*(b[j][1]-b[i][1])>0});
+function rings(p0,r,ae){let cur=off(p0,r);if(!ok(p0,cur))return[];const R=[cur];let st=ae;while(st>.1&&R.length<400){const nx=off(cur,st);if(ok(cur,nx)){R.push(nx);cur=nx}else st/=2}return R}
+const cfg=()=>({sh:$('shp').value,sa:+$('sa').value||0,sb:+$('sb').value||0,sc:+$('sc').value||0,sop:$('sop').value,sd:+$('sd').value||5,spt:$('spt').value,mat:MAT[$('mat').value],d:+$('td').value||6,z:+$('fl').value||2,max:+$('mr').value||12000,so:(+$('so').value||60)/100,pw:+$('pw').value||1500,gc:$('gc').value,w:+$('sw').value||100,h:+$('sh').value||60,t:+$('st').value||10,safe:5});
+
+function parse(raw,c,ov){
+ const t=raw.toLowerCase().replace(/×/g,'x'),o={ops:[],W:c.w,H:c.h,T:c.t};
+ if(ov){const m=t.match(/stock\s*(\d+\.?\d*)\s*x\s*(\d+\.?\d*)(?:\s*x\s*(\d+\.?\d*))?/);
+  if(m){o.W=o.w=+m[1];o.H=o.h=+m[2];if(m[3])o.T=o.t=+m[3]}
+  o.mat=/alumin|6061/.test(t)?'al':/titan/.test(t)?'ti':/brass/.test(t)?'br':/acrylic|plastic|delrin/.test(t)?'pl':/steel/.test(t)?'st':null}
+ const{W,H,T}=o;
+ t.split(/[;\n]|,(?!\d)|\bthen\b|\.(?!\d)/).map(s=>s.trim()).filter(Boolean).forEach(s=>{
+  const dep=num(s.match(/(\d+\.?\d*)\s*mm\s*(?:deep|depth)/))??num(s.match(/depth\s*(?:of\s*)?(\d+\.?\d*)/));
+  const thru=/through|thru/.test(s),at=s.match(/at\s*\(?\s*(-?\d+\.?\d*)\s*[, ]\s*(-?\d+\.?\d*)/),ctr=at?[+at[1],+at[2]]:[W/2,H/2];
+  const dm=s.match(/(\d+\.?\d*)\s*x\s*(\d+\.?\d*)/);
+  const dd=num(s.match(/(\d+\.?\d*)\s*mm\s*(?:dia|ø)/))??num(s.match(/(?:ø|dia\w*)\s*(\d+\.?\d*)/))??num(s.match(/(\d+\.?\d*)\s*mm(?!\s*(?:deep|depth))/));
+  if(/pocket|slot/.test(s)){
+   if(/circ|round/.test(s))o.ops.push({type:'cpocket',d:dd||20,depth:dep||3,c:ctr});
+   else o.ops.push({type:'pocket',w:dm?+dm[1]:40,h:dm?+dm[2]:30,depth:dep||3,c:ctr});
+  }else if(/drill|hole/.test(s)){
+   const d=dd||6,n=num(s.match(/(\d+)\s*(?:x\s*)?(?:holes?|bolts?)/))||1,pcd=num(s.match(/(?:pcd|bolt circle|pitch circle)\s*(?:of)?\s*(\d+\.?\d*)/));
+   let pts=[];const m=Math.min(10,W/4,H/4);
+   if(pcd||n>4){const R=pcd?pcd/2:Math.min(W,H)/2-12;for(let i=0;i<n;i++){const a=2*Math.PI*i/n;pts.push([ctr[0]+R*Math.cos(a),ctr[1]+R*Math.sin(a)])}}
+   else if(at&&n==1)pts=[ctr];
+   else if(n==4)pts=[[m,m],[W-m,m],[W-m,H-m],[m,H-m]];
+   else if(n==2)pts=[[m,H/2],[W-m,H/2]];else if(n==3)pts=[[m,m],[W-m,m],[W/2,H-m]];else pts=[ctr];
+   o.ops.push({type:'drill',d,depth:dep??(thru?T+1:T/2),pts});
+  }else if(/profile|contour|cut out|outline|perimeter/.test(s))o.ops.push({type:'profile'});
+  else if(/face|skim/.test(s))o.ops.push({type:'face',depth:dep??dd??.5});
+ });
+ return o}
+
+function gen(pl,c,prompt){
+ const L=[],P=[],chk=[],tools=[],{W:SW,H:SH,T:ST}=pl;let p={x:0,y:0,z:c.safe},tool=null,fd=null;
+ const em=s=>L.push(s),r=c.d/2,ae=c.so*c.d,ap=Math.min(c.mat.ap*c.d,ST);
+ const mk=(n,d,dr)=>{const m=c.mat,raw=1000*(dr?m.vc*.6:m.vc)/(Math.PI*d),rpm=Math.min(c.max,Math.round(raw/100)*100||100),fz=dr?.02*d:m.k*d,feed=Math.min(4000,Math.round(dr?rpm*fz:rpm*c.z*fz));
+  if(raw>c.max)chk.push(['warn',`T${n} Ø${F(d)}: ideal ${Math.round(raw)} RPM exceeds machine max. Capped at ${c.max}, so cutting speed is below optimum.`]);
+  return{n,d,dr,rpm,feed,pf:Math.round(feed*.4),vc:Math.PI*d*rpm/1000,fz}};
+ const seg=(x,y,z,ty,f)=>{const l=Math.hypot(x-p.x,y-p.y,z-p.z);if(l>1e-9)P.push({x0:p.x,y0:p.y,z0:p.z,x1:x,y1:y,z1:z,t:ty,f,d:tool?tool.d:0,li:L.length-1,l});p={x,y,z}};
+ const mv=(g,x,y,z,f)=>{let s=g;if(x!==undefined&&Math.abs(x-p.x)>1e-9)s+=` X${F(x)}`;else x=p.x;if(y!==undefined&&Math.abs(y-p.y)>1e-9)s+=` Y${F(y)}`;else y=p.y;if(z!==undefined&&Math.abs(z-p.z)>1e-9)s+=` Z${F(z)}`;else z=p.z;
+  if(s==g)return;if(g=='G1'&&f===undefined)f=fd;if(g=='G1'&&f!==fd){s+=` F${f}`;fd=f}em(s);seg(x,y,z,g=='G0'?'r':(x==p.x&&y==p.y?'p':'c'),f)};
+ const tc=t=>{if(tool&&tool.n==t.n&&tool.d==t.d)return;mv('G0',undefined,undefined,c.safe);tool=t;fd=null;if(!tools.find(q=>q.n==t.n&&q.d==t.d))tools.push(t);
+  em(`(--- T${t.n} ${t.dr?'DRILL':'END MILL'} D${F(t.d)} ---)`);em('M5');
+  if(c.gc=='fanuc'){em(`T${t.n} M6`);em(`S${t.rpm} M3`);em(`G43 H${t.n} Z${c.safe}`)}else{em(`M0 (INSERT T${t.n} D${F(t.d)})`);em(`S${t.rpm} M3`)}};
+ const pz=(dp,a)=>{const n=Math.max(1,Math.ceil(dp/a-1e-9));return Array.from({length:n},(_,i)=>-dp*(i+1)/n)};
+ const appr=(x,y,z)=>{mv('G0',x,y);mv('G0',undefined,undefined,z)};
+ const circ=(cx,cy,R)=>{if(R<1e-6)return;em(`G2 X${F(cx+R)} Y${F(cy)} I${F(-R)} J0`);const N=Math.max(24,Math.ceil(R*4));for(let i=1;i<=N;i++){const a=-2*Math.PI*i/N;seg(cx+R*Math.cos(a),cy+R*Math.sin(a),p.z,'c',tool.feed)}};
+ const norm=o=>o.type=='pocket'?{type:'rpocket',cx:o.c[0],cy:o.c[1],hw:o.w/2,hh:o.h/2,cr:0,depth:o.depth,name:'RECT'}:o.type=='cpocket'?{type:'rpocket',cx:o.c[0],cy:o.c[1],hw:o.d/2,hh:o.d/2,cr:o.d/2,depth:o.depth,name:'CIRCULAR'}:o;
+ const arcm=(g,x,y,i,j,z,f)=>{const cx=p.x+i,cy=p.y+j,R=Math.hypot(i,j),a0=Math.atan2(p.y-cy,p.x-cx);let a1=Math.atan2(y-cy,x-cx);f=f||tool.feed;if(g=='G3'){while(a1<=a0+1e-9)a1+=2*Math.PI}else{while(a1>=a0-1e-9)a1-=2*Math.PI}
+  let s=`${g} X${F(x)} Y${F(y)}`;if(z!==undefined&&Math.abs(z-p.z)>1e-9)s+=` Z${F(z)}`;s+=` I${F(i)} J${F(j)}`;if(f!==fd){s+=` F${f}`;fd=f}em(s);
+  const z0=p.z,z1=z===undefined?p.z:z,n=Math.max(6,Math.ceil(Math.abs(a1-a0)/(2*Math.acos(Math.max(0,1-.02/Math.max(R,.05))))));for(let k=1;k<=n;k++){const a=a0+(a1-a0)*k/n;seg(k==n?x:cx+R*Math.cos(a),k==n?y:cy+R*Math.sin(a),z0+(z1-z0)*k/n,'c',f)}};
+ const isC=(hw,hh,cr)=>cr>1e-6&&Math.abs(hw-cr)<1e-6&&Math.abs(hh-cr)<1e-6;
+ const rs=(cx,cy,hw,hh,cr)=>isC(hw,hh,cr)?[cx+hw,cy]:[cx-hw+cr,cy-hh];
+ const rr=(cx,cy,hw,hh,cr)=>{if(isC(hw,hh,cr)){arcm('G3',cx+hw,cy,-hw,0);return}
+  mv('G1',cx+hw-cr,cy-hh,undefined,tool.feed);if(cr>1e-6)arcm('G3',cx+hw,cy-hh+cr,0,cr);mv('G1',cx+hw,cy+hh-cr);if(cr>1e-6)arcm('G3',cx+hw-cr,cy+hh,-cr,0);
+  mv('G1',cx-hw+cr,cy+hh);if(cr>1e-6)arcm('G3',cx-hw,cy+hh-cr,0,-cr);mv('G1',cx-hw,cy-hh+cr);if(cr>1e-6)arcm('G3',cx-hw+cr,cy-hh,cr,0)};
+ const helix=(cx,cy,hr,zp,z)=>{const pitch=Math.max(.3,Math.min(ap,2*Math.PI*hr*.07));appr(cx+hr,cy,zp);let zc=zp;while(zc-pitch>z+1e-6){zc-=pitch;arcm('G3',cx+hr,cy,-hr,0,zc,E.pf)}arcm('G3',cx+hr,cy,-hr,0,z,E.pf);arcm('G3',cx+hr,cy,-hr,0,undefined,E.pf)};
+ const dseg=(q,a,b)=>{const dx=b[0]-a[0],dy=b[1]-a[1],t=Math.max(0,Math.min(1,((q[0]-a[0])*dx+(q[1]-a[1])*dy)/(dx*dx+dy*dy||1)));return Math.hypot(q[0]-a[0]-t*dx,q[1]-a[1]-t*dy)};
+ const E=mk(1,c.d,false);const inb=o=>{if(o.poly.length<3){chk.push(['err','Shape needs at least 3 valid points. Check the dimensions.']);return false}const bx=o.poly.map(q=>q[0]),by=o.poly.map(q=>q[1]);if(Math.min(...bx)<0||Math.max(...bx)>SW||Math.min(...by)<0||Math.max(...by)>SH)chk.push(['err',o.name+' extends outside the stock.']);return true};
+ em('(AI-ASSISTED CNC G-CODE GENERATOR)');em(`(STOCK ${F(SW)}X${F(SH)}X${F(ST)} ${c.mat.n.toUpperCase()})`);em(`(PROMPT: ${prompt.replace(/[()]/g,' ').slice(0,90)})`);
+ em(c.gc=='fanuc'?'G21 G90 G17 G94 G40 G49 G80 G54':'G21 G90 G17 G94 G54');em(`G0 Z${c.safe}`);
+ const ord={face:0,pocket:1,cpocket:1,rpocket:1,ppocket:1,drill:2,profile:3,rprofile:3,pprofile:3},tn={};let nt=2;
+ pl.ops.map(norm).slice().sort((a,b)=>ord[a.type]-ord[b.type]).forEach(o=>{
+  if(o.type!='drill'&&o.depth>4*c.d)chk.push(['warn',`${o.type} depth ${F(o.depth)} mm is over 4x tool Ø. Tool deflection risk; consider a longer-flute tool or finishing passes.`]);
+  if(o.type=='face'){tc(E);em(`(FACE ${F(o.depth)} MM)`);const x0=-r-1,x1=SW+r+1,ys=[0];let y=0,zp=1;while(y<SH-1e-6){y=Math.min(SH,y+ae);ys.push(y)}
+   pz(o.depth,ap).forEach(z=>{appr(x0,0,zp);mv('G1',undefined,undefined,z,E.pf);ys.forEach((y,i)=>{if(i)mv('G1',undefined,y,undefined,E.feed);mv('G1',i%2?x0:x1,undefined,undefined,E.feed)});mv('G0',undefined,undefined,c.safe);zp=z+.5})}
+  else if(o.type=='pocket'){tc(E);const hw=o.w/2-r,hh=o.h/2-r,[cx,cy]=o.c;em(`(POCKET ${F(o.w)}X${F(o.h)} DEPTH ${F(o.depth)})`);
+   if(hw<=0||hh<=0){chk.push(['err',`Pocket ${F(o.w)}x${F(o.h)} is too small for a Ø${F(c.d)} tool. Skipped.`]);return}
+   if(cx-o.w/2<0||cx+o.w/2>SW||cy-o.h/2<0||cy+o.h/2>SH)chk.push(['err',`Pocket at ${F(cx)},${F(cy)} extends outside the stock.`]);
+   const m=Math.min(hw,hh),os=[];for(let q=0;q<m-1e-6;q+=ae)os.push(q);os.push(m);let zp=1;
+   pz(o.depth,ap).forEach(z=>{appr(cx-hw,cy-hh,zp);mv('G1',cx+hw,cy-hh,z,E.feed);
+    os.forEach((q,i)=>{const a=hw-q,b=hh-q;if(i){mv('G1',cx-a,cy-b,undefined,E.feed);mv('G1',cx+a,cy-b)}mv('G1',cx+a,cy+b,undefined,E.feed);mv('G1',cx-a,cy+b);mv('G1',cx-a,cy-b)});
+    mv('G0',undefined,undefined,c.safe);zp=z+.5})}
+  else if(o.type=='cpocket'){tc(E);const R=o.d/2-r,[cx,cy]=o.c;em(`(CIRCULAR POCKET D${F(o.d)} DEPTH ${F(o.depth)})`);
+   if(R<=0){chk.push(['err',`Circular pocket Ø${F(o.d)} is too small for a Ø${F(c.d)} tool. Skipped.`]);return}
+   if(cx-o.d/2<0||cx+o.d/2>SW||cy-o.d/2<0||cy+o.d/2>SH)chk.push(['err',`Circular pocket at ${F(cx)},${F(cy)} extends outside the stock.`]);
+   const rs=[];for(let q=ae;q<R-1e-6;q+=ae)rs.push(q);rs.push(R);let zp=1;
+   pz(o.depth,ap).forEach(z=>{appr(cx,cy,zp);mv('G1',undefined,undefined,z,E.pf);rs.forEach(q=>{mv('G1',cx+q,cy,undefined,E.feed);circ(cx,cy,q)});mv('G0',undefined,undefined,c.safe);zp=z+.5})}
+  else if(o.type=='profile'){tc(E);const dp=ST+.5,x0=-r,y0=-r,x1=SW+r,y1=SH+r;em('(PROFILE OUTSIDE, CLIMB MILLING, CCW)');let zp=1;
+   pz(dp,ap).forEach(z=>{appr(x0,y0,zp);mv('G1',undefined,undefined,z,E.pf);mv('G1',x1,y0,undefined,E.feed);mv('G1',x1,y1);mv('G1',x0,y1);mv('G1',x0,y0);mv('G0',undefined,undefined,c.safe);zp=z+.5})}
+  else if(o.type=='rpocket'){tc(E);em(`(${o.name} POCKET DEPTH ${F(o.depth)}, HELICAL ENTRY)`);const HW=o.hw-r,HH=o.hh-r,CR=Math.max(o.cr-r,0),cx=o.cx,cy=o.cy;
+   if(HW<=1e-6||HH<=1e-6){chk.push(['err',`${o.name} pocket is too small for a \u00d8${F(c.d)} tool. Skipped.`]);return}
+   if(cx-o.hw<-1e-6||cx+o.hw>SW+1e-6||cy-o.hh<-1e-6||cy+o.hh>SH+1e-6)chk.push(['err',`${o.name} pocket extends outside the stock.`]);
+   const m=Math.min(HW,HH),qs=[];for(let q=0;q<m-1e-6;q+=ae)qs.push(q);qs.push(m);qs.reverse();const hr=Math.min(.6*r,m);let zp=1;
+   pz(o.depth,ap).forEach(z=>{if(m>=.5*r)helix(cx,cy,hr,zp,z);else{appr(cx,cy,zp);mv('G1',undefined,undefined,z,E.pf)}
+    qs.forEach(q=>{const hw=HW-q,hh=HH-q,cr=Math.min(Math.max(CR-q,0),hw,hh);if(hw<1e-6&&hh<1e-6)return;const s0=rs(cx,cy,hw,hh,cr);mv('G1',s0[0],s0[1],undefined,E.feed);rr(cx,cy,hw,hh,cr)});
+    mv('G0',undefined,undefined,c.safe);zp=z+.5})}
+  else if(o.type=='rprofile'){tc(E);em(`(CUT OUT ${o.name}, OUTSIDE, CLIMB, ARCS)`);const hw=o.hw+r,hh=o.hh+r,cr=o.cr>1e-6?o.cr+r:0,cx=o.cx,cy=o.cy,dp=ST+.5;
+   if(cx-o.hw<-1e-6||cx+o.hw>SW+1e-6||cy-o.hh<-1e-6||cy+o.hh>SH+1e-6)chk.push(['err',`${o.name} extends outside the stock.`]);
+   const s0=rs(cx,cy,hw,hh,cr);let zp=1;pz(dp,ap).forEach(z=>{appr(s0[0],s0[1],zp);mv('G1',undefined,undefined,z,E.pf);rr(cx,cy,hw,hh,cr);mv('G0',undefined,undefined,c.safe);zp=z+.5});chk.push(['warn','Cut-out has no holding tabs. Clamp the part or add tabs before cutting through.'])}
+  else if(o.type=='ppocket'){tc(E);if(!inb(o))return;em(`(${o.name.toUpperCase()} POCKET DEPTH ${F(o.depth)})`);const R=rings(o.poly,r,ae).reverse();if(!R.length){chk.push(['err',`${o.name} is too small for a Ø${F(c.d)} tool. Skipped.`]);return}let zp=1;
+   pz(o.depth,ap).forEach(z=>{const v0=R[0][0],dist=Math.min(...R[R.length-1].map((q,i,a)=>dseg(v0,q,a[(i+1)%a.length]))),hr=.6*r;if(dist>=hr+.2){helix(v0[0],v0[1],hr,zp,z);mv('G1',v0[0],v0[1],undefined,E.feed)}else{appr(v0[0],v0[1],zp);mv('G1',undefined,undefined,z,E.pf)}R.forEach((g,i)=>{if(i)mv('G1',g[0][0],g[0][1],undefined,E.feed);for(let k=1;k<=g.length;k++){const q=g[k%g.length];mv('G1',q[0],q[1],undefined,E.feed)}});mv('G0',undefined,undefined,c.safe);zp=z+.5});chk.push(['warn',`${o.name} pocket: ${R.length} offset passes. Narrow islands thinner than the stepover may need a finishing pass.`])}
+  else if(o.type=='pprofile'){tc(E);if(!inb(o))return;const g=off(o.poly,-r),dp=ST+.5;em(`(CUT OUT ${o.name.toUpperCase()}, OUTSIDE, CLIMB)`);let zp=1;
+   pz(dp,ap).forEach(z=>{appr(g[0][0],g[0][1],zp);mv('G1',undefined,undefined,z,E.pf);for(let k=1;k<=g.length;k++){const q=g[k%g.length];mv('G1',q[0],q[1],undefined,E.feed)}mv('G0',undefined,undefined,c.safe);zp=z+.5});chk.push(['warn','Cut-out has no holding tabs. Clamp the part or add tabs before cutting through.'])}
+  else if(o.type=='drill'){const k=o.d+'';if(!tn[k])tn[k]=nt++;const D=mk(tn[k],o.d,true);tc(D);em(`(DRILL ${o.pts.length}X D${F(o.d)} DEPTH ${F(o.depth)})`);
+   o.pts.forEach(q=>{if(q[0]<o.d||q[0]>SW-o.d||q[1]<o.d||q[1]>SH-o.d)chk.push(['warn',`Hole at ${F(q[0])},${F(q[1])} is within 1 diameter of the stock edge.`])});
+   if(o.depth>ST+.01&&o.depth<ST+.5)chk.push(['warn','Hole depth is only slightly past the stock thickness. Check drill tip clearance.']);
+   if(c.gc=='fanuc'){const pk=o.depth>3*o.d;o.pts.forEach((q,i)=>{em(i?`X${F(q[0])} Y${F(q[1])}`:`G98 ${pk?'G83':'G81'} X${F(q[0])} Y${F(q[1])} Z${F(-o.depth)} R2${pk?' Q'+F(o.d):''} F${D.feed}`);seg(q[0],q[1],2,'r');seg(q[0],q[1],-o.depth,'p',D.feed);seg(q[0],q[1],2,'r')});em('G80');seg(p.x,p.y,c.safe,'r');fd=null}
+   else o.pts.forEach(q=>{mv('G0',q[0],q[1]);mv('G0',undefined,undefined,2);let zp=2;pz(o.depth,Math.max(2,o.d)).forEach((z,i)=>{if(i)mv('G0',undefined,undefined,zp+.3);mv('G1',undefined,undefined,z,D.feed);mv('G0',undefined,undefined,2);zp=z});mv('G0',undefined,undefined,c.safe)})}
+ });
+ mv('G0',undefined,undefined,c.safe);em('M5');em('G0 X0 Y0');em(c.gc=='fanuc'?'M30':'M2');
+ let cut=0,rap=0,pln=0,tm=0;P.forEach(s=>{if(s.t=='r'){rap+=s.l;tm+=s.l/5000}else{if(s.t=='p')pln+=s.l;else cut+=s.l;tm+=s.l/(s.f||1)}});
+ const MRR=ae*ap*E.feed,pw=c.mat.kc*MRR/60000;
+ if(pw>c.pw)chk.push(['warn',`Estimated cutting power ${Math.round(pw)} W exceeds the ${c.pw} W spindle. Lower stepover or depth per pass.`]);
+ if(!pl.ops.length)chk.push(['err','No operations recognised. Try: face, pocket 40x30, drill 4 holes 6mm, profile.']);
+ if(!chk.some(x=>x[0]=='err'))chk.push(['ok',`All ${pl.ops.length} operation(s) inside stock limits. Depth per pass ${F(ap)} mm, stepover ${F(ae)} mm.`]);
+ return{L,P,chk,tools,cut,rap,pln,tm,MRR,pw,E,SW,SH,ST}}
+
+function descr(o){return o.type=='rpocket'?`${o.name} pocket / ${F(o.depth)} deep`:o.type=='rprofile'?`Cut out ${o.name}`:o.type=='ppocket'?`${o.name} pocket / ${F(o.depth)} deep`:o.type=='pprofile'?`Cut out ${o.name}`:o.type=='face'?`Face ${F(o.depth)} mm`:o.type=='pocket'?`Pocket ${F(o.w)}x${F(o.h)} / ${F(o.depth)} deep`:o.type=='cpocket'?`Circular pocket Ø${F(o.d)} / ${F(o.depth)} deep`:o.type=='drill'?`Drill ${o.pts.length}x Ø${F(o.d)} / ${F(o.depth)} deep`:'Profile outside'}
+let G=null,prog=1,playing=false,lastT=0;
+function run0(fromPrompt){const c0=cfg(),pl=parse($('prompt').value,c0,fromPrompt);
+ if(fromPrompt){if(pl.mat)$('mat').value=pl.mat;if(pl.w){$('sw').value=pl.w;$('sh').value=pl.h}if(pl.t)$('st').value=pl.t}
+ const c=cfg();pl.W=c.w;pl.H=c.h;pl.T=c.t;if(c.sh!='stock'){const nm=SH[c.sh][0],A=c.sa,B=c.sb,an={circle:[A/2,A/2,A/2],rect:[A/2,B/2,0],rrect:[A/2,B/2,Math.min(c.sc,A/2,B/2)],slot:[A/2,B/2,Math.min(A,B)/2]}[c.sh];
+  if(an){const hw=an[0],hh=an[1];pl.ops.push({type:c.sop=='pocket'?'rpocket':'rprofile',cx:c.w/2,cy:c.h/2,hw,hh,cr:Math.min(an[2],hw,hh),depth:c.sd,name:nm.toUpperCase()})}
+  else{const poly=polyOf(c,[c.w/2,c.h/2]);pl.ops.push(c.sop=='pocket'?{type:'ppocket',poly,depth:c.sd,name:nm}:{type:'pprofile',poly,name:nm})}}G=gen(pl,c,$('prompt').value);
+ const pe=$('plan');pe.textContent='';pl.ops.forEach(o=>{const s=document.createElement('span');s.textContent=descr(o);pe.appendChild(s)});
+ $('out').textContent=G.L.map((l,i)=>String(i+1).padStart(3,'0')+'  '+l).join('\n');
+ const m=Math.floor(G.tm),sc=Math.round((G.tm-m)*60),T=G.tools.map(t=>`T${t.n}: S${t.rpm} F${t.feed}`).join(' | ');
+ $('stats').innerHTML=[[`${m}m ${String(sc).padStart(2,'0')}s`,'Cycle time'],[Math.round(G.cut)+' mm','Cut length'],[Math.round(G.rap)+' mm','Rapid length'],[G.L.length,'G-code lines'],[Math.round(G.pw)+' W','Est. cutting power'],[Math.round(G.MRR/1000)+' cm³/min','Removal rate'],[G.E.vc.toFixed(0)+' m/min','Cutting speed Vc'],[G.E.fz.toFixed(3)+' mm','Chip load / tooth']].map(a=>`<div><b>${a[0]}</b><small>${a[1]}</small></div>`).join('')+`<div style="grid-column:1/-1"><small>${T}</small></div>`;
+ const ck=$('ck');ck.textContent='';G.chk.forEach(x=>{const d=document.createElement('div');d.className='ck '+x[0];d.textContent=x[1];ck.appendChild(d)});
+ draw()}
+
+function draw2(){if(!G)return;const cv=$('cv'),W=cv.clientWidth,H=Math.round(W*.66),dpr=devicePixelRatio||1;cv.width=W*dpr;cv.height=H*dpr;cv.style.height=H+'px';
+ const x=cv.getContext('2d');x.setTransform(dpr,0,0,dpr,0,0);const S=getComputedStyle(document.documentElement),col=n=>S.getPropertyValue(n).trim();
+ const pad=14,mg=8,sc=Math.min((W-2*pad)/(G.SW+2*mg),(H-2*pad)/(G.SH+2*mg)),ox=(W-sc*G.SW)/2,oy=(H+sc*G.SH)/2,tx=X=>ox+X*sc,ty=Y=>oy-Y*sc;
+ x.fillStyle=col('--cd');x.fillRect(0,0,W,H);x.strokeStyle=col('--ln');x.lineWidth=1;x.fillStyle=col('--pn');x.fillRect(tx(0),ty(G.SH),G.SW*sc,G.SH*sc);x.strokeStyle=col('--ac');x.strokeRect(tx(0),ty(G.SH),G.SW*sc,G.SH*sc);
+ const tot=G.P.reduce((a,s)=>a+s.l,0);let lim=tot*prog,acc=0,cur={x:0,y:0,z:G.E?5:5},li=0,last=null;
+ for(const s of G.P){if(acc>=lim)break;const f=Math.min(1,(lim-acc)/s.l),X=s.x0+(s.x1-s.x0)*f,Y=s.y0+(s.y1-s.y0)*f,Z=s.z0+(s.z1-s.z0)*f;acc+=s.l;last=s;cur={x:X,y:Y,z:Z,s};
+  if(s.t=='r'){x.setLineDash([4,4]);x.strokeStyle=col('--am');x.lineWidth=1;x.beginPath();x.moveTo(tx(s.x0),ty(s.y0));x.lineTo(tx(X),ty(Y));x.stroke();x.setLineDash([])}
+  else if(s.t=='c'){x.lineCap='round';x.strokeStyle=col('--ac');x.globalAlpha=.22;x.lineWidth=Math.max(1,s.d*sc);x.beginPath();x.moveTo(tx(s.x0),ty(s.y0));x.lineTo(tx(X),ty(Y));x.stroke();x.globalAlpha=1;x.lineWidth=1.2;x.beginPath();x.moveTo(tx(s.x0),ty(s.y0));x.lineTo(tx(X),ty(Y));x.stroke()}
+  else{x.fillStyle=col('--rd');x.beginPath();x.arc(tx(s.x1),ty(s.y1),2.2,0,7);x.fill()}}
+ if(last){x.strokeStyle=col('--tx');x.lineWidth=1.5;x.beginPath();x.arc(tx(cur.x),ty(cur.y),Math.max(3,last.d/2*sc),0,7);x.moveTo(tx(cur.x)-6,ty(cur.y));x.lineTo(tx(cur.x)+6,ty(cur.y));x.moveTo(tx(cur.x),ty(cur.y)-6);x.lineTo(tx(cur.x),ty(cur.y)+6);x.stroke()}
+ $('rd').textContent=last?`X ${cur.x.toFixed(2)}  Y ${cur.y.toFixed(2)}  Z ${cur.z.toFixed(2)}  | line ${last.li+1}/${G.L.length}  | ${last.t=='r'?'RAPID':'F'+Math.round(last.f)}`:`Ready. ${G.P.length} moves, ${G.L.length} lines.`}
+
+let T3=null,mode3=true,sim=null;
+function setC(s,k){const h=s.Hh[k],ST=s.ST;let r,g,b;if(h>=ST-1e-4){r=.76;g=.8;b=.85}else if(h<=.02){r=.1;g=.15;b=.2}else{const t=h/ST;r=.12+.2*t;g=.5+.2*t;b=.5+.1*t}s.col[3*k]=r;s.col[3*k+1]=g;s.col[3*k+2]=b}
+function build3(){if(typeof THREE=='undefined')return;const c3=$('c3');
+ if(!T3){const r=new THREE.WebGLRenderer({antialias:true}),el=r.domElement;r.setPixelRatio(Math.min(devicePixelRatio||1,2));c3.appendChild(el);el.style.cssText='width:100%;display:block;border:1px solid var(--ln);border-radius:4px;touch-action:none;background:#08111c';
+  const sc=new THREE.Scene(),cam=new THREE.PerspectiveCamera(40,1.3,1,6000);sc.add(new THREE.AmbientLight(0xffffff,.55));const d1=new THREE.DirectionalLight(0xffffff,.9);d1.position.set(1,2,1.2);sc.add(d1);const d2=new THREE.DirectionalLight(0x88ccff,.35);d2.position.set(-1.5,1,-1);sc.add(d2);
+  const tool=new THREE.Mesh(new THREE.CylinderGeometry(1,1,1,28),new THREE.MeshStandardMaterial({color:0xfbbf24,metalness:.6,roughness:.35}));sc.add(tool);
+  T3={r,sc,cam,tool,th:.7,ph:.95,rad:200,ptr:{},w:0,objs:[]};
+  el.addEventListener('pointerdown',e=>{el.setPointerCapture(e.pointerId);T3.ptr[e.pointerId]=[e.clientX,e.clientY]});
+  ['pointerup','pointercancel'].forEach(n=>el.addEventListener(n,e=>{delete T3.ptr[e.pointerId]}));
+  el.addEventListener('pointermove',e=>{const o=T3.ptr[e.pointerId];if(!o)return;const ids=Object.keys(T3.ptr);if(ids.length==1){T3.th-=(e.clientX-o[0])*.01;T3.ph=Math.min(1.52,Math.max(.12,T3.ph-(e.clientY-o[1])*.01))}else{const q=T3.ptr[ids.find(i=>i!=e.pointerId)],d0=Math.hypot(o[0]-q[0],o[1]-q[1]),d1=Math.hypot(e.clientX-q[0],e.clientY-q[1]);if(d1>5)T3.rad=Math.min(2000,Math.max(40,T3.rad*d0/d1))}T3.ptr[e.pointerId]=[e.clientX,e.clientY];draw()});
+  el.addEventListener('wheel',e=>{e.preventDefault();T3.rad=Math.min(2000,Math.max(40,T3.rad*(1+e.deltaY*.001)));draw()},{passive:false})}
+ T3.objs.forEach(o=>{T3.sc.remove(o);o.geometry&&o.geometry.dispose()});T3.objs=[];
+ const W=G.SW,H=G.SH,ST=G.ST,cs=Math.max(W,H)/170,nx=Math.ceil(W/cs),ny=Math.ceil(H/cs),csx=W/nx,csy=H/ny,nv=(nx+1)*(ny+1),ring=[];
+ for(let i=0;i<=nx;i++)ring.push(i);for(let j=1;j<=ny;j++)ring.push(j*(nx+1)+nx);for(let i=nx-1;i>=0;i--)ring.push(ny*(nx+1)+i);for(let j=ny-1;j>=1;j--)ring.push(j*(nx+1));
+ const L=ring.length,pos=new Float32Array((nv+L)*3),col=new Float32Array((nv+L)*3),idx=[];
+ for(let j=0;j<=ny;j++)for(let i=0;i<=nx;i++){const k=j*(nx+1)+i;pos[3*k]=i*csx-W/2;pos[3*k+1]=ST;pos[3*k+2]=-(j*csy-H/2)}
+ for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){const k=j*(nx+1)+i;idx.push(k,k+1,k+nx+1,k+1,k+nx+2,k+nx+1)}
+ ring.forEach((t,m)=>{const q=nv+m;pos[3*q]=pos[3*t];pos[3*q+1]=0;pos[3*q+2]=pos[3*t+2];col[3*q]=.3;col[3*q+1]=.35;col[3*q+2]=.4;const t2=ring[(m+1)%L],q2=nv+(m+1)%L;idx.push(t,t2,q,t2,q2,q)});
+ const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.BufferAttribute(pos,3));geo.setAttribute('color',new THREE.BufferAttribute(col,3));geo.setIndex(idx);
+ const mesh=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({vertexColors:true,flatShading:true,side:THREE.DoubleSide,metalness:.35,roughness:.55}));T3.sc.add(mesh);
+ const bed=new THREE.Mesh(new THREE.PlaneGeometry(Math.max(W,H)*1.7,Math.max(W,H)*1.7),new THREE.MeshBasicMaterial({color:0x0a1420}));bed.rotation.x=-Math.PI/2;bed.position.y=-.4;T3.sc.add(bed);
+ const grid=new THREE.GridHelper(Math.max(W,H)*1.7,17,0x2a4a62,0x1c2f45);grid.position.y=-.3;T3.sc.add(grid);T3.objs.push(mesh,bed,grid);
+ T3.rad=1.55*Math.max(W,H);
+ let a=0;const cum=G.P.map(s=>{const v=a;a+=s.l;return v});cum.tot=a;
+ sim={G,W,H,ST,csx,csy,nx,ny,nv,Hh:new Float32Array(nv).fill(ST),pos,col,geo,cum,len:0,i:0,crash:null,cur:{x:0,y:0,z:5,d:G.E.d}};for(let k=0;k<nv;k++)setC(sim,k)}
+function carve(s,px,py,z,rad){const hz=Math.max(0,z+s.ST),i0=Math.max(0,Math.floor((px-rad)/s.csx)),i1=Math.min(s.nx,Math.ceil((px+rad)/s.csx)),j0=Math.max(0,Math.floor((py-rad)/s.csy)),j1=Math.min(s.ny,Math.ceil((py+rad)/s.csy));
+ for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){const dx=i*s.csx-px,dy=j*s.csy-py;if(dx*dx+dy*dy<=rad*rad){const k=j*(s.nx+1)+i;if(s.Hh[k]>hz){s.Hh[k]=hz;s.pos[3*k+1]=hz;setC(s,k)}}}}
+function simTo(p){const s=sim,tg=p*s.cum.tot;
+ if(tg<s.len-1e-9){s.Hh.fill(s.ST);for(let k=0;k<s.nv;k++){s.pos[3*k+1]=s.ST;setC(s,k)}s.len=0;s.i=0;s.crash=null;s.cur={x:0,y:0,z:5,d:G.E.d}}
+ const P=G.P,step=Math.min(s.csx,s.csy)*.5;
+ for(;s.i<P.length;s.i++){const sg=P[s.i],a=s.cum[s.i];if(a>=tg)break;const b=Math.min(tg,a+sg.l),a0=Math.max(a,s.len),at=f=>[sg.x0+(sg.x1-sg.x0)*f,sg.y0+(sg.y1-sg.y0)*f,sg.z0+(sg.z1-sg.z0)*f];
+  if(sg.t!='r'&&b>a0){const n=Math.max(1,Math.ceil((b-a0)/step));for(let q=1;q<=n;q++){const v=at((a0+(b-a0)*q/n-a)/sg.l);carve(s,v[0],v[1],v[2],sg.d/2)}}else if(sg.t=='r'&&b>a0&&s.crash==null&&sg.d>0){const n=Math.max(1,Math.ceil((b-a0)/step));for(let q=1;q<=n;q++){const v=at((a0+(b-a0)*q/n-a)/sg.l),i=Math.round(v[0]/s.csx),j=Math.round(v[1]/s.csy);if(i>=0&&i<=s.nx&&j>=0&&j<=s.ny&&Math.max(0,v[2]+s.ST)<s.Hh[j*(s.nx+1)+i]-.05){s.crash=sg.li;break}}}
+  const v=at((b-a)/sg.l);s.cur={x:v[0],y:v[1],z:v[2],d:sg.d,t:sg.t,f:sg.f,li:sg.li};if(b<a+sg.l-1e-9)break}
+ s.len=tg;s.geo.attributes.position.needsUpdate=true;s.geo.attributes.color.needsUpdate=true}
+function draw3(){const c3=$('c3');if(!G)return;if(typeof THREE=='undefined'){c3.textContent='The 3D view needs the three.js library, which did not load. Check your connection or use the 2D toolpath.';return}
+ if(!sim||sim.G!==G)build3();simTo(prog);
+ const W=c3.clientWidth||360,Ht=Math.round(W*.75);if(T3.w!=W){T3.w=W;T3.r.setSize(W,Ht,false);T3.r.domElement.style.height=Ht+'px';T3.cam.aspect=W/Ht;T3.cam.updateProjectionMatrix()}
+ const s=sim,tg=new THREE.Vector3(0,s.ST/2,0);T3.cam.position.set(T3.rad*Math.sin(T3.ph)*Math.cos(T3.th),tg.y+T3.rad*Math.cos(T3.ph),T3.rad*Math.sin(T3.ph)*Math.sin(T3.th));T3.cam.lookAt(tg);
+ const c=s.cur;T3.tool.scale.set(Math.max(c.d,1)/2,30,Math.max(c.d,1)/2);T3.tool.position.set(c.x-s.W/2,c.z+s.ST+15,-(c.y-s.H/2));T3.tool.material.color.setHex(s.crash!=null?0xf87171:0xfbbf24);T3.r.render(T3.sc,T3.cam);
+ const rem=s.Hh.reduce((a,h)=>a+(s.ST-h),0)*s.csx*s.csy;
+ $('rd').textContent=(s.crash!=null?'CRASH, rapid into material at line '+(s.crash+1)+' | ':'')+`X ${c.x.toFixed(2)}  Y ${c.y.toFixed(2)}  Z ${c.z.toFixed(2)}  | line ${(c.li||0)+1}/${G.L.length}  | ${c.t=='r'?'RAPID':c.f?'F'+Math.round(c.f):'READY'}  | approx. removed ${(rem/1000).toFixed(1)} cm³`}
+function draw(){if(mode3)draw3();else draw2();hl()}
+$('v3').onclick=()=>{mode3=true;$('c3').style.display='';$('cv').style.display='none';$('v3').classList.add('pri');$('v2').classList.remove('pri');draw()};
+$('v2').onclick=()=>{mode3=false;$('c3').style.display='none';$('cv').style.display='';$('v2').classList.add('pri');$('v3').classList.remove('pri');draw()};
+let hlI=-1;
+function cumOf(){if(!G.cum){let a=0;G.cum=G.P.map(s=>{const v=a;a+=s.l;return v});G.cum.tot=a}return G.cum}
+function segAt(pr){const cm=cumOf(),tg=pr*cm.tot;let lo=0,hi=G.P.length-1;while(lo<hi){const mid=(lo+hi+1)>>1;if(cm[mid]<=tg)lo=mid;else hi=mid-1}return G.P[lo]}
+function hl(){if(!G||!G.P.length)return;const i=segAt(prog).li;if(i===hlI)return;const o=$('out'),ch=o.children;if(ch[hlI])ch[hlI].classList.remove('on');hlI=i;const e=ch[i];if(e){e.classList.add('on');o.scrollTop=Math.max(0,e.offsetTop-o.clientHeight/2)}}
+function present(chips){if(chips){const pe=$('plan');pe.textContent='';chips.forEach(t=>{const s=document.createElement('span');s.textContent=t;pe.appendChild(s)})}
+ const out=$('out');out.textContent='';const fr=document.createDocumentFragment();G.L.forEach((l,i)=>{const d=document.createElement('div');d.className='gl';d.dataset.i=i;d.textContent=String(i+1).padStart(3,'0')+'  '+l;fr.appendChild(d)});out.appendChild(fr);hlI=-1;
+ const m=Math.floor(G.tm),sc=Math.round((G.tm-m)*60),E=G.E;
+ const cards=[[`${m}m ${String(sc).padStart(2,'0')}s`,'Cycle time'],[Math.round(G.cut)+' mm','Cut length'],[Math.round(G.rap)+' mm','Rapid length'],[G.L.length,'G-code lines'],G.ext?[(Math.round(G.maxD*100)/100)+' mm','Max cut depth']:[Math.round(G.pw)+' W','Est. cutting power'],G.ext?[G.P.length,'Motion segments']:[Math.round(G.MRR/1000)+' cm\u00b3/min','Removal rate'],[(E.vc||0).toFixed(0)+' m/min','Cutting speed Vc'],[(E.fz||0).toFixed(3)+' mm','Chip load / tooth']];
+ $('stats').innerHTML=cards.map(a=>`<div><b>${a[0]}</b><small>${a[1]}</small></div>`).join('')+(G.tools.length?`<div style="grid-column:1/-1"><small>${G.tools.map(t=>`T${t.n}: S${t.rpm} F${t.feed}`).join(' | ')}</small></div>`:'');
+ const ck=$('ck');ck.textContent='';G.chk.forEach(x=>{const d=document.createElement('div');d.className='ck '+x[0];d.textContent=x[1];ck.appendChild(d)});
+ if(typeof THREE!='undefined'&&G.P.length){if(!sim||sim.G!==G)build3();simTo(1);if(sim.crash!=null){const d=document.createElement('div');d.className='ck err';d.textContent=`Rapid move (G0) goes into uncut material at line ${sim.crash+1}. On a real machine this crashes the tool.`;ck.appendChild(d)}}
+ draw()}
+function run(fp){run0(fp);present()}
+function parseG(txt,c){const raw=txt.split(/\r?\n/),P=[],chk=[],seen={};let p={x:0,y:0,z:c.safe},mo=null,abs=true,inch=false,fd=0,S=0,on=false,d=c.d,r98=true,iz=c.safe,cR=2,cD=0,maxD=0,first=null;
+ const warn=(l,m,li)=>{if(!seen[m]){seen[m]=1;chk.push([l,m+(li!==undefined?' (line '+(li+1)+')':'')])}};
+ const seg=(x,y,z,t,f,li)=>{const l=Math.hypot(x-p.x,y-p.y,z-p.z);if(l>1e-9)P.push({x0:p.x,y0:p.y,z0:p.z,x1:x,y1:y,z1:z,t,f,d,li,l});p={x,y,z};if(t!='r')maxD=Math.max(maxD,-z)};
+ const arc=(ccw,x,y,i,j,z,li)=>{const cx=p.x+i,cy=p.y+j,R=Math.hypot(i,j);if(Math.abs(Math.hypot(x-cx,y-cy)-R)>.05)warn('warn','Arc start and end radii differ by more than 0.05 mm',li);let a0=Math.atan2(p.y-cy,p.x-cx),a1=Math.atan2(y-cy,x-cx);if(ccw){while(a1<=a0+1e-9)a1+=2*Math.PI}else{while(a1>=a0-1e-9)a1-=2*Math.PI}const z0=p.z,n=Math.max(6,Math.ceil(Math.abs(a1-a0)/(2*Math.acos(Math.max(0,1-.02/Math.max(R,.05))))));for(let k=1;k<=n;k++){const a=a0+(a1-a0)*k/n;seg(k==n?x:cx+R*Math.cos(a),k==n?y:cy+R*Math.sin(a),z0+(z-z0)*k/n,'c',fd||300,li)}};
+ raw.forEach((ln,li)=>{(ln.match(/\([^)]*\)/g)||[]).forEach(m=>{const dm=m.match(/^\((?:--- )?(?:T\d+ )?(?:END MILL |DRILL |INSERT T\d+ )D(\d+\.?\d*)/);if(dm)d=+dm[1]});
+  const code=ln.replace(/\([^)]*\)/g,'').replace(/;.*$/,'').toUpperCase(),w={},g=[],re=/([A-Z])\s*(-?\d*\.?\d+)/g;let m;while(m=re.exec(code)){if(m[1]=='G')g.push(+m[2]);else w[m[1]]=+m[2]}
+  g.forEach(v=>{if(v==90)abs=true;else if(v==91)abs=false;else if(v==20)inch=true;else if(v==21)inch=false;else if(v==98)r98=true;else if(v==99)r98=false;else if(v==80)mo=null;else if([0,1,2,3,81,83].includes(v)){mo=v;if(v>3)iz=p.z}});
+  const u=inch?25.4:1;if(w.M==3)on=true;else if(w.M==5)on=false;if(w.S!==undefined)S=w.S;if(w.F!==undefined)fd=w.F*u;if(w.R!==undefined&&mo>3)cR=w.R*u;
+  const hx=w.X!==undefined,hy=w.Y!==undefined,hz=w.Z!==undefined;if(mo===null||!(hx||hy||hz))return;
+  const nx=hx?(abs?w.X*u:p.x+w.X*u):p.x,ny=hy?(abs?w.Y*u:p.y+w.Y*u):p.y,nz=hz?(abs?w.Z*u:p.z+w.Z*u):p.z;
+  if(mo==0)seg(nx,ny,nz,'r',0,li);
+  else if(mo==1){if(!fd)warn('warn','G1 move with no feed rate (F) set',li);if(!on)warn('warn','Cutting before the spindle is started (no M3)',li);if(!first)first={S,fd,d};seg(nx,ny,nz,nx==p.x&&ny==p.y?'p':'c',fd||300,li)}
+  else if(mo==2||mo==3){if(w.I===undefined&&w.J===undefined){warn('err','Arc uses R format, which this verifier does not support. Use I/J',li);seg(nx,ny,nz,'c',fd||300,li)}else{if(!first)first={S,fd,d};arc(mo==3,nx,ny,(w.I||0)*u,(w.J||0)*u,nz,li)}}
+  else{if(hz)cD=nz;if(!first)first={S,fd,d};seg(nx,ny,p.z,'r',0,li);seg(nx,ny,cR,'r',0,li);seg(nx,ny,cD,'p',fd||300,li);seg(nx,ny,r98?Math.max(iz,cR):cR,'r',0,li)}});
+ const SW=c.w,SH=c.h,ST=c.t;P.forEach(s=>{if(s.t!='r'){if(s.z1<-ST-1.5)warn('err',`Tool cuts ${F(-s.z1-ST)} mm below the stock bottom, into the table`,s.li);if(s.z1<0&&(s.x1<-s.d||s.x1>SW+s.d||s.y1<-s.d||s.y1>SH+s.d))warn('warn','Cutting move outside the stock envelope',s.li)}});
+ if(!P.length)chk.push(['err','No motion found. Supported: G0 G1 G2 G3 (I/J), G81 G83 G80, G90/G91, G20/G21.']);else if(!chk.some(x=>x[0]=='err'))chk.push(['ok',`Parsed ${P.length} moves with no program errors. Checking for crashes in the simulation.`]);
+ let cut=0,rap=0,pln=0,tm=0;P.forEach(s=>{if(s.t=='r'){rap+=s.l;tm+=s.l/5000}else{if(s.t=='p')pln+=s.l;else cut+=s.l;tm+=s.l/(s.f||1)}});
+ const E=first?{d:first.d,rpm:first.S,feed:first.fd,vc:Math.PI*first.d*first.S/1000,fz:first.S?first.fd/(first.S*c.z):0}:{d:c.d,rpm:0,feed:0,vc:0,fz:0};
+ return{L:raw,P,chk,tools:[],cut,rap,pln,tm,MRR:0,pw:0,E,SW,SH,ST,ext:true,maxD}}
+function runPaste(){const c=cfg();G=parseG($('pg').value,c);prog=1;$('sl').value=1000;present(['Pasted G-code: '+G.P.length+' moves'])}
+const SAMPLE=['(DEMO WITH A MISTAKE)','G21 G90 G17 G54','(--- T1 END MILL D6 ---)','S12000 M3','G0 Z5','G0 X20 Y20','G1 Z-3 F300','G1 X80 F1080','G0 X80 Y40 Z-3','G1 X20 F1080','G0 Z5','G0 X50 Y30','G3 X50 Y30 I10 J0 Z-3 F600','G0 Z5','M5','M30'].join('\n');
+$('out').onclick=e=>{const t=e.target.closest('.gl');if(!t||!G||!G.P.length)return;const i=+t.dataset.i,cm=cumOf();let k=G.P.findIndex(s=>s.li>=i);if(k<0)k=G.P.length-1;prog=cm.tot?Math.min(1,cm[k]/cm.tot+1e-6):0;$('sl').value=prog*1000;playing=false;$('pl').textContent='Play';hlI=-1;draw()};
+$('vr').onclick=runPaste;$('bs').onclick=()=>{$('pg').value=SAMPLE;runPaste()};
+function tick(t){if(!playing)return;const dt=(t-lastT)/1000;lastT=t;prog=Math.min(1,prog+dt*(+$('sp').value)/18);$('sl').value=prog*1000;draw();if(prog>=1){playing=false;$('pl').textContent='Replay'}else requestAnimationFrame(tick)}
+$('pl').onclick=()=>{if(playing){playing=false;$('pl').textContent='Play';return}if(prog>=1)prog=0;playing=true;$('pl').textContent='Pause';lastT=performance.now();requestAnimationFrame(tick)};
+$('sl').oninput=e=>{prog=e.target.value/1000;draw()};
+$('go').onclick=()=>run(true);
+['mat','gc','td','fl','mr','so','pw','sw','sh','st','shp','sa','sb','sc','sop','sd','spt'].forEach(i=>$(i).addEventListener('input',()=>run(false)));
+$('cp').onclick=async()=>{const t=G.L.join('\n');try{await navigator.clipboard.writeText(t);$('cp').textContent='Copied'}catch(e){const r=document.createRange();r.selectNodeContents($('out'));getSelection().removeAllRanges();getSelection().addRange(r);$('cp').textContent='Selected, press copy'}setTimeout(()=>$('cp').textContent='Copy',1600)};
+$('dl').onclick=()=>{try{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([G.L.join('\n')],{type:'text/plain'}));a.download='part.nc';a.click()}catch(e){}};
+addEventListener('resize',draw);
+loadEx(EX[0]);
+</script></body></html>
